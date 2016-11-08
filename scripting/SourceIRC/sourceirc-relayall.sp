@@ -23,6 +23,9 @@ new g_userid = 0;
 
 new bool:g_isteam = false;
 
+new Handle:v_RelayGame = INVALID_HANDLE;
+new Handle:v_RelayServer = INVALID_HANDLE;
+
 public Plugin:myinfo = {
 	name = "SourceIRC -> Relay All",
 	author = "Azelphur",
@@ -42,6 +45,9 @@ public OnPluginStart() {
 	RegConsoleCmd("say_team", Command_SayTeam);
 
 	LoadTranslations("sourceirc.phrases");
+	
+	v_RelayGame = CreateConVar("sourceirc_relaygame", "1", "0 = Disabled, 1 = Enabled", FCVAR_NOTIFY|FCVAR_DONTRECORD, true, 0.0, true, 1.0);
+	v_RelayServer = CreateConVar("sourceirc_relayserver", "0", "0 = Disabled, 1 = Enabled", FCVAR_NOTIFY|FCVAR_DONTRECORD, true, 0.0, true, 1.0);
 }
 
 public OnAllPluginsLoaded() {
@@ -69,6 +75,7 @@ public Action:Command_SayTeam(client, args) {
 
 public Action:Event_PlayerSay(Handle:event, const String:name[], bool:dontBroadcast)
 {
+	new enabled = GetConVarBool(v_RelayServer);
 	new userid = GetEventInt(event, "userid");
 	new client = GetClientOfUserId(userid);
 	
@@ -90,11 +97,14 @@ public Action:Event_PlayerSay(Handle:event, const String:name[], bool:dontBroadc
 	else
 		Format(result, sizeof(result), "%s\x03%02d%N\x03: %s", result, team, client, message);
 
-	IRC_MsgFlaggedChannels("relay", result);
+	if (enabled) {
+		IRC_MsgFlaggedChannels("relay", result);
+	}
 }
 
 
 public void OnClientAuthorized(client, const String:auth[]) { // We are hooking this instead of the player_connect event as we want the steamid
+	new enabled = GetConVarBool(v_RelayServer);
 	new userid = GetClientUserId(client);
 	if (userid <= g_userid) // Ugly hack to get around mass connects on map change
 		return;
@@ -103,12 +113,15 @@ public void OnClientAuthorized(client, const String:auth[]) { // We are hooking 
 	GetClientName(client, playername, sizeof(playername));
 	Format(result, sizeof(result), "%t", "Player Connected", playername, auth, userid);
 	if (!StrEqual(result, ""))
+	if (enabled) {
 		IRC_MsgFlaggedChannels("relay", result);
+	}
 	return;
 }
 
 public Action:Event_PlayerDisconnect(Handle:event, const String:name[], bool:dontBroadcast)
 {
+	new enabled = GetConVarBool(v_RelayServer);
 	new userid = GetEventInt(event, "userid");
 	new client = GetClientOfUserId(userid);
 	if (client != 0) {
@@ -122,12 +135,15 @@ public Action:Event_PlayerDisconnect(Handle:event, const String:name[], bool:don
 		}
 		Format(result, sizeof(result), "%t", "Player Disconnected", playername, auth, userid, reason);
 		if (!StrEqual(result, ""))
+		if (enabled) {
 			IRC_MsgFlaggedChannels("relay", result);
+		}
 	}
 }
 
 public Action:Event_PlayerChangeName(Handle:event, const String:name[], bool:dontBroadcast)
 {
+	new enabled = GetConVarBool(v_RelayServer);
 	new userid = GetEventInt(event, "userid");
 	new client = GetClientOfUserId(userid);
 	if (client != 0) {
@@ -137,21 +153,31 @@ public Action:Event_PlayerChangeName(Handle:event, const String:name[], bool:don
 		GetClientAuthString(client, auth, sizeof(auth));
 		Format(result, sizeof(result), "%t", "Changed Name", oldname, auth, userid, newname);
 		if (!StrEqual(result, ""))
+		if (enabled)
+		{
 			IRC_MsgFlaggedChannels("relay", result);
+		}
 	}
 }
 
 public OnMapEnd() {
-	IRC_MsgFlaggedChannels("relay", "%t", "Map Changing");
+	new enabled = GetConVarBool(v_RelayServer);
+	if (enabled) {
+		IRC_MsgFlaggedChannels("relay", "%t", "Map Changing");
+	}
 }
 
 public OnMapStart() {
+	new enabled = GetConVarBool(v_RelayServer);
 	decl String:map[128];
 	GetCurrentMap(map, sizeof(map));
-	IRC_MsgFlaggedChannels("relay", "%t", "Map Changed", map);
+	if (enabled) {
+		IRC_MsgFlaggedChannels("relay", "%t", "Map Changed", map);
+	}
 }
 
 public Action:Event_PRIVMSG(const String:hostmask[], args) {
+	new enabled = GetConVarBool(v_RelayGame);
 	decl String:channel[64];
 	IRC_GetEventArg(1, channel, sizeof(channel));
 	if (IRC_ChannelHasFlag(channel, "relay")) {
@@ -162,12 +188,18 @@ public Action:Event_PRIVMSG(const String:hostmask[], args) {
 			text[strlen(text)-1] = '\x00';
 			IRC_Strip(text, sizeof(text)); // Strip IRC Color Codes
 			IRC_StripGame(text, sizeof(text)); // Strip Game color codes
-			PrintToChatAll("\x01[\x04IRC\x01] * %s %s", nick, text[7]);
+			if (enabled) {
+				PrintToChatAll("\x01 * %s %s", nick, text[7]);
+				//PrintToChatAll("\x01[\x04IRC\x01] * %s %s", nick, text[7]);
+			}
 		}
 		else {
 			IRC_Strip(text, sizeof(text)); // Strip IRC Color Codes
 			IRC_StripGame(text, sizeof(text)); // Strip Game color codes
-			PrintToChatAll("\x01[\x04IRC\x01] %s :  %s", nick, text);
+			if (enabled) {
+				PrintToChatAll("\x03%s \x01: %s", nick, text);
+				//PrintToChatAll("\x01[\x04IRC\x01] %s :  %s", nick, text);
+			}
 		}
 	}
 }
